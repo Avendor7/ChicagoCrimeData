@@ -14,152 +14,98 @@ angular.module('chicagoPdApp')
       'AngularJS',
       'Karma'
     ];
-
-        // Set our margins
         var margin = {
                 top: 20,
-                right: 20,
+                right: 30,
                 bottom: 30,
-                left: 60
+                left: 40
             },
             width = 960 - margin.left - margin.right,
             height = 500 - margin.top - margin.bottom;
 
-        // Our X scale
-        var x = d3.scale.ordinal()
-            .rangeRoundBands([0, width], .1);
+        // scale to ordinal because x axis is not numerical
+        var x = d3.scale.ordinal().rangeRoundBands([0, width], .1);
 
-        // Our Y scale
-        var y = d3.scale.linear()
-            .rangeRound([height, 0]);
+        //scale to numerical value by height
+        var y = d3.scale.linear().range([height, 0]);
 
-        // Our color bands
-        var color = d3.scale.ordinal()
-            .range(["#308fef", "#5fa9f3", "#1176db"]);
-
-        // Use our X scale to set a bottom axis
+        var chart = d3.select(".jumbotron")
+            .append("svg") //append svg element inside #chart
+            .attr("width", width + (2 * margin.left) + margin.right) //set width
+            .attr("height", height + margin.top + margin.bottom); //set height
         var xAxis = d3.svg.axis()
             .scale(x)
-            .orient("bottom");
+            .orient("bottom"); //orient bottom because x-axis will appear below the bars
 
-        // Smae for our left axis
         var yAxis = d3.svg.axis()
             .scale(y)
-            .orient("left")
-            .tickFormat(d3.format(".2s"));
+            .orient("left");
 
-        // Add our chart to the document body
-        var svg = d3.select(".jumbotron").append("svg")
-            .attr("width", width + margin.left + margin.right)
-            .attr("height", height + margin.top + margin.bottom)
-            .append("g")
-            .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+        d3.json("https://data.cityofchicago.org/resource/ijzp-q8t2.json", function (error, unsorteddata) {
 
-        // Fetch data via SODA from the Chicago data site
-        d3.csv("https://data.cityofchicago.org/resource/w8km-9pzd.csv?$select=year,bus,paratransit,rail", function (error, data) {
-            // Make sure our numbers are really numbers
-            data.forEach(function (d) {
-                d.year = +d.year;
-                d.bus = +d.bus;
-                d.paratransit = +d.paratransit;
-                d.rail = +d.rail;
-            });
+            var data = d3.nest().key(function (d) {
+                return d.primary_type
+            }).rollup(function (d) {
+                return d.length
+            }).entries(unsorteddata)
 
-            console.log(data);
-
-            // Use our values to set our color bands
-            color.domain(d3.keys(data[0]).filter(function (key) {
-                return key !== "year";
-            }));
-
-            data.forEach(function (d) {
-                var y0 = 0;
-                d.types = color.domain().map(function (name) {
-                    return {
-                        name: name,
-                        y0: y0,
-                        y1: y0 += +d[name]
-                    };
-                });
-                d.total = d.types[d.types.length - 1].y1;
-            });
-
-            // Sort by year
-            data.sort(function (a, b) {
-                return a.year - b.year;
-            });
-
-            // Our X domain is our set of years
             x.domain(data.map(function (d) {
-                return d.year;
+                return d.key
             }));
-
-            // Our Y domain is from zero to our highest total
             y.domain([0, d3.max(data, function (d) {
-                return d.total;
+                return d.values
             })]);
 
-            svg.append("g")
+            var bar = chart.selectAll("g")
+                .data(data)
+                .enter()
+                .append("g")
+                .attr("transform", function (d, i) {
+                    return "translate(" + x(d.key) + ", 0)";
+                });
+
+            bar.append("rect")
+                .attr("y", function (d) {
+                    return y(d.values);
+                })
+                .attr("x", function (d, i) {
+                    return x.rangeBand() + (margin.left / 4);
+                })
+                .attr("height", function (d) {
+                    return height - y(d.values);
+                })
+                .attr("width", x.rangeBand()); //set width base on range on ordinal data
+
+            bar.append("text")
+                .attr("x", x.rangeBand() + margin.left)
+                .attr("y", function (d) {
+                    return y(d.values) - 10;
+                })
+                .attr("dy", ".75em")
+                .text(function (d) {
+                    return d.values;
+                });
+
+            chart.append("g")
                 .attr("class", "x axis")
-                .attr("transform", "translate(0," + height + ")")
+                .attr("transform", "translate(" + margin.left + "," + height + ")")
                 .call(xAxis);
 
-            svg.append("g")
+            chart.append("g")
                 .attr("class", "y axis")
+                .attr("transform", "translate(" + margin.left + ",0)")
                 .call(yAxis)
                 .append("text")
                 .attr("transform", "rotate(-90)")
                 .attr("y", 6)
                 .attr("dy", ".71em")
                 .style("text-anchor", "end")
-                .text("Ridership");
-
-            var year = svg.selectAll(".year")
-                .data(data)
-                .enter().append("g")
-                .attr("class", "g")
-                .attr("transform", function (d) {
-                    return "translate(" + x(d.year) + ",0)";
-                });
-
-            year.selectAll("rect")
-                .data(function (d) {
-                    return d.types;
-                })
-                .enter().append("rect")
-                .attr("width", x.rangeBand())
-                .attr("y", function (d) {
-                    return y(d.y1);
-                })
-                .attr("height", function (d) {
-                    return y(d.y0) - y(d.y1);
-                })
-                .style("fill", function (d) {
-                    return color(d.name);
-                });
-
-            var legend = svg.selectAll(".legend")
-                .data(color.domain().slice().reverse())
-                .enter().append("g")
-                .attr("class", "legend")
-                .attr("transform", function (d, i) {
-                    return "translate(0," + i * 20 + ")";
-                });
-
-            legend.append("rect")
-                .attr("x", width - 18)
-                .attr("width", 18)
-                .attr("height", 18)
-                .style("fill", color);
-
-            legend.append("text")
-                .attr("x", width - 24)
-                .attr("y", 9)
-                .attr("dy", ".35em")
-                .style("text-anchor", "end")
-                .text(function (d) {
-                    return d;
-                });
+                .text("Frequency");
         });
+
+        function type(d) {
+            d.key = +d.key; // coerce to number
+            return d;
+        }
     });
 //---------------------------------------------------------------------
